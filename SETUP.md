@@ -1,8 +1,9 @@
 # AI Video Editing Workspace Setup
 
 This workspace is configured for conversation-driven video editing using
-[video-use](https://github.com/browser-use/video-use), a Claude Code skill
-built on FFmpeg.
+[video-use](https://github.com/browser-use/video-use) (FFmpeg-based cutting,
+grading, subtitles) and the [VideoDB](https://github.com/video-db/skills)
+skill (ingest, indexing, search, timeline edits) as Claude Code skills.
 
 ## What's installed
 
@@ -10,30 +11,43 @@ built on FFmpeg.
 |---|---|---|
 | FFmpeg / ffprobe | ✅ installed | `apt-get install ffmpeg` (6.1.1, Ubuntu 24.04 universe) |
 | video-use repo | ✅ cloned | `~/Developer/video-use` |
-| Python deps (requests, librosa, matplotlib, pillow, numpy) | ✅ installed | via `uv sync` into `~/Developer/video-use/.venv` |
-| Claude Code skill registration | ✅ linked | `~/.claude/skills/video-use -> ~/Developer/video-use` |
-| ElevenLabs API key | ❌ not configured | required for transcription (Scribe); see "Known issue" below |
+| video-use Python deps | ✅ installed | via `uv sync` into `~/Developer/video-use/.venv` |
+| video-use skill registration | ✅ linked | `~/.claude/skills/video-use -> ~/Developer/video-use` |
+| ElevenLabs API key | ❌ not configured | required for video-use transcription (Scribe); network access now open, key still needed |
+| videodb skill | ✅ installed | `.agents/skills/videodb`, symlinked to `.claude/skills/videodb` (via `npx skills add video-db/skills`) |
+| videodb Python SDK | ✅ installed | `pip install videodb python-dotenv` (installed without the `[capture]` extra — fails to build here; desktop capture unavailable, file/URL/RTSP ingest unaffected) |
+| VIDEO_DB_API_KEY | ✅ configured | stored at `~/.config/videodb/.env` (outside this repo), auth verified live |
 | yt-dlp | ⚪ not installed (optional) | only needed to pull sources from URLs |
 | Manim / pdflatex | ⚪ not installed (optional) | only needed for Manim-based animation overlays |
 | Node.js | ✅ present (v22.22.2) | satisfies HyperFrames' Node 22+ requirement, if used |
 | GPU | ❌ none | FFmpeg will use CPU (libx264/libx265) encoding only |
 
-Reproduce with `scripts/setup-video-use.sh`.
+Reproduce video-use with `scripts/setup-video-use.sh`.
 
-## Known issue: ElevenLabs API is network-blocked in this environment
+## Resolved: environment network policy was blocking ElevenLabs and VideoDB
 
-video-use's transcription pipeline calls `api.elevenlabs.io` (ElevenLabs
-Scribe) for word-level timestamps and speaker diarization — this is a hard
-dependency; nothing gets edited without it. In this Claude Code cloud
-sandbox, the outbound proxy's network policy currently **denies** that host
-at the policy layer (`CONNECT` returns 403, confirmed via
-`$HTTPS_PROXY/__agentproxy/status`), not just an unreachable/slow host.
+Both video-use (transcription via `api.elevenlabs.io`) and videodb
+(`api.videodb.io`, `console.videodb.io`) require outbound API access. This
+sandbox's default network policy denied those hosts at the proxy layer
+(`CONNECT` returned 403). Fixed by editing the environment's **Network
+access** setting to **Custom** and adding:
 
-To fix: widen this environment's network policy to allow
-`api.elevenlabs.io` (and `elevenlabs.io` if you fetch keys via browser from
-this environment). Network policy is configured per-environment; see
-https://code.claude.com/docs/en/claude-code-on-the-web for how policies are
-chosen when an environment is created. Once access is allowed, add the key:
+```
+api.videodb.io
+console.videodb.io
+api.elevenlabs.io
+```
+
+(with "Also include default list of common package managers" left checked).
+Confirmed live in this session: `api.videodb.io` / `console.videodb.io`
+return 200, `api.elevenlabs.io` returns a proper 401 (reachable, just no key
+yet), and the stored `VIDEO_DB_API_KEY` authenticates successfully via the
+SDK. Note the change did **not** apply to the already-running session/cache
+— it only took effect after this session was retried following the policy
+edit, so a running session may need to be refreshed to pick up a network
+policy change.
+
+To finish ElevenLabs setup, add the key (never into this repo):
 
 ```bash
 printf 'ELEVENLABS_API_KEY=%s\n' "<your key>" > ~/Developer/video-use/.env
